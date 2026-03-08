@@ -1,0 +1,4 @@
+ultralytics
+roboflow
+pyserial
+opencv-python
