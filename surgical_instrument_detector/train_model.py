@@ -26,15 +26,21 @@ RUN_NAME       = "surgical_instrument_detector"  # Name used for results folder
 
 
 def find_data_yaml():
-    """Locate data.yaml inside OUTPUT_DIR, searching one level deep."""
-    direct = os.path.join(OUTPUT_DIR, "data.yaml")
-    if os.path.exists(direct):
-        return direct
+    """Locate data.yaml inside OUTPUT_DIR, searching one level deep first.
+
+    The subdirectory data.yaml (dataset/<project-version>/data.yaml) has correct
+    absolute image paths, so it is preferred over the root dataset/data.yaml.
+    """
+    # Subdirectory path first: dataset/<project-version>/data.yaml
     if os.path.isdir(OUTPUT_DIR):
-        for entry in os.listdir(OUTPUT_DIR):
+        for entry in sorted(os.listdir(OUTPUT_DIR)):
             candidate = os.path.join(OUTPUT_DIR, entry, "data.yaml")
             if os.path.exists(candidate):
                 return candidate
+    # Fallback: dataset/data.yaml
+    direct = os.path.join(OUTPUT_DIR, "data.yaml")
+    if os.path.exists(direct):
+        return direct
     return None
 
 
@@ -59,7 +65,7 @@ def train():
 
     # Start training
     print(f"[2/2] Starting training for {EPOCHS} epochs...")
-    print(f"      Dataset  : {os.path.abspath(DATA_YAML)}")
+    print(f"      Dataset  : {os.path.abspath(data_yaml)}")
     print(f"      Image sz : {IMAGE_SIZE}px  |  Batch: {BATCH_SIZE}")
     print()
 
