@@ -11,10 +11,12 @@ Prerequisite:
 """
 
 import os
+import yaml
 from ultralytics import YOLO
 
 # ─── CONFIGURATION ────────────────────────────────────────────────────────────
-OUTPUT_DIR     = "dataset"
+# Use absolute path so paths resolve correctly regardless of working directory
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dataset")
 DATA_YAML      = "dataset/data.yaml"   # fallback; resolved dynamically below
 BASE_MODEL     = "yolov8n.pt"          # Pre-trained YOLOv8 nano weights
 EPOCHS         = 50                    # Number of training epochs
@@ -44,6 +46,40 @@ def find_data_yaml():
     return None
 
 
+def ensure_absolute_paths(yaml_path):
+    """Rewrite any relative image paths in data.yaml to absolute paths.
+
+    Roboflow sometimes writes relative paths that only work from inside
+    the subdirectory. This ensures YOLO can find images from any CWD.
+    """
+    yaml_dir = os.path.dirname(os.path.abspath(yaml_path))
+    with open(yaml_path, "r") as f:
+        cfg = yaml.safe_load(f)
+
+    changed = False
+    for key in ("train", "val", "test"):
+        if key not in cfg:
+            continue
+        raw = cfg[key]
+        if raw and not os.path.isabs(raw):
+            abs_path = os.path.normpath(os.path.join(yaml_dir, raw))
+            cfg[key] = abs_path
+            changed = True
+
+    if changed:
+        with open(yaml_path, "w") as f:
+            yaml.dump(cfg, f, default_flow_style=False)
+        print(f"  Rewrote relative paths to absolute in: {yaml_path}")
+
+    # Verify the train path exists
+    train_path = cfg.get("train", "")
+    if train_path and not os.path.isdir(train_path):
+        raise FileNotFoundError(
+            f"Training images directory not found: {train_path}\n"
+            "Please re-run download_dataset.py to fetch the dataset."
+        )
+
+
 def train():
     """Load YOLOv8n and train on the surgical instruments dataset."""
     print("=" * 60)
@@ -58,6 +94,7 @@ def train():
             "Please run download_dataset.py first."
         )
     print(f"\nUsing dataset config: {os.path.abspath(data_yaml)}")
+    ensure_absolute_paths(data_yaml)
 
     # Load the base YOLOv8n model (downloads weights on first run)
     print(f"\n[1/2] Loading base model: {BASE_MODEL}")
