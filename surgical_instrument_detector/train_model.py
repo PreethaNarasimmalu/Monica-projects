@@ -14,7 +14,8 @@ import os
 from ultralytics import YOLO
 
 # ─── CONFIGURATION ────────────────────────────────────────────────────────────
-DATA_YAML      = "dataset/data.yaml"   # Path to the dataset config file
+OUTPUT_DIR     = "dataset"
+DATA_YAML      = "dataset/data.yaml"   # fallback; resolved dynamically below
 BASE_MODEL     = "yolov8n.pt"          # Pre-trained YOLOv8 nano weights
 EPOCHS         = 50                    # Number of training epochs
 IMAGE_SIZE     = 640                   # Input image size (pixels)
@@ -24,18 +25,33 @@ RUN_NAME       = "surgical_instrument_detector"  # Name used for results folder
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+def find_data_yaml():
+    """Locate data.yaml inside OUTPUT_DIR, searching one level deep."""
+    direct = os.path.join(OUTPUT_DIR, "data.yaml")
+    if os.path.exists(direct):
+        return direct
+    if os.path.isdir(OUTPUT_DIR):
+        for entry in os.listdir(OUTPUT_DIR):
+            candidate = os.path.join(OUTPUT_DIR, entry, "data.yaml")
+            if os.path.exists(candidate):
+                return candidate
+    return None
+
+
 def train():
     """Load YOLOv8n and train on the surgical instruments dataset."""
     print("=" * 60)
     print("YOLOv8n Training — Surgical Instrument Detector")
     print("=" * 60)
 
-    # Validate that the dataset config exists
-    if not os.path.exists(DATA_YAML):
+    # Locate data.yaml (handles Roboflow subdirectory layout)
+    data_yaml = find_data_yaml()
+    if not data_yaml:
         raise FileNotFoundError(
-            f"Dataset config not found at '{DATA_YAML}'.\n"
+            f"data.yaml not found inside '{OUTPUT_DIR}'.\n"
             "Please run download_dataset.py first."
         )
+    print(f"\nUsing dataset config: {os.path.abspath(data_yaml)}")
 
     # Load the base YOLOv8n model (downloads weights on first run)
     print(f"\n[1/2] Loading base model: {BASE_MODEL}")
@@ -48,7 +64,7 @@ def train():
     print()
 
     results = model.train(
-        data=DATA_YAML,
+        data=data_yaml,
         epochs=EPOCHS,
         imgsz=IMAGE_SIZE,
         batch=BATCH_SIZE,
