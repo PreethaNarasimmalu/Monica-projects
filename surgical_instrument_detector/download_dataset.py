@@ -52,25 +52,49 @@ def download_dataset():
     return dataset
 
 
+def find_split_dir(split):
+    """Find the images directory for a given split (train/valid/test).
+
+    Roboflow sometimes downloads into a subdirectory named after the project,
+    so we search one level deep before giving up.
+    """
+    # Direct path: dataset/train/images
+    direct = os.path.join(OUTPUT_DIR, split, "images")
+    if os.path.isdir(direct):
+        return direct
+
+    # Subdirectory path: dataset/<project-version>/train/images
+    if os.path.isdir(OUTPUT_DIR):
+        for entry in os.listdir(OUTPUT_DIR):
+            candidate = os.path.join(OUTPUT_DIR, entry, split, "images")
+            if os.path.isdir(candidate):
+                return candidate
+
+    return None
+
+
 def count_images():
     """Count and display the number of training and validation images."""
-    train_img_dir = os.path.join(OUTPUT_DIR, "train", "images")
-    valid_img_dir = os.path.join(OUTPUT_DIR, "valid", "images")
+    IMAGE_EXTS = (".jpg", ".jpeg", ".png")
 
-    train_count = len([
-        f for f in os.listdir(train_img_dir)
-        if f.lower().endswith((".jpg", ".jpeg", ".png"))
-    ]) if os.path.isdir(train_img_dir) else 0
+    def count_in(directory):
+        if not directory:
+            return 0
+        return len([f for f in os.listdir(directory) if f.lower().endswith(IMAGE_EXTS)])
 
-    valid_count = len([
-        f for f in os.listdir(valid_img_dir)
-        if f.lower().endswith((".jpg", ".jpeg", ".png"))
-    ]) if os.path.isdir(valid_img_dir) else 0
+    train_dir = find_split_dir("train")
+    valid_dir = find_split_dir("valid")
+    test_dir  = find_split_dir("test")
+
+    train_count = count_in(train_dir)
+    valid_count = count_in(valid_dir)
+    test_count  = count_in(test_dir)
 
     print("\n─── Dataset Summary ───────────────────────────────────────")
-    print(f"  Training images   : {train_count}")
-    print(f"  Validation images : {valid_count}")
-    print(f"  Total images      : {train_count + valid_count}")
+    print(f"  Training images   : {train_count}  ({train_dir or 'not found'})")
+    print(f"  Validation images : {valid_count}  ({valid_dir or 'not found'})")
+    print(f"  Test images       : {test_count}  ({test_dir  or 'not found'})")
+    print(f"  Total images      : {train_count + valid_count + test_count}")
     print("───────────────────────────────────────────────────────────\n")
 
     return train_count, valid_count
