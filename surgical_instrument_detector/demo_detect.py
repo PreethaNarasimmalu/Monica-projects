@@ -31,10 +31,15 @@ SURGICAL_MODEL_PATH = os.path.join(
 )
 COCO_MODEL_PATH = "yolov8n.pt"   # Downloaded automatically on first run
 
-CONF_THRESHOLD = 0.5
+SURGICAL_CONF_THRESHOLD = 0.5   # Confidence for surgical model
+COCO_CONF_THRESHOLD     = 0.35  # Lower threshold catches items COCO would miss
 
 # COCO class IDs for cutlery
 CUTLERY_CLASS_IDS = {42: "Fork", 43: "Knife", 44: "Spoon"}
+
+# If a surgical box overlaps a COCO box by more than this, suppress the
+# surgical detection (it's just the model mislabelling a utensil).
+CROSS_MODEL_IOU_THRESHOLD = 0.30
 
 # Drawing colours (BGR)
 SURGICAL_COLOUR = (0, 200, 0)    # Green
@@ -63,6 +68,20 @@ def _load_models():
             )
 
 
+def _iou(box_a: np.ndarray, box_b: np.ndarray) -> float:
+    """Return Intersection-over-Union for two [x1,y1,x2,y2] boxes."""
+    ix1 = max(box_a[0], box_b[0])
+    iy1 = max(box_a[1], box_b[1])
+    ix2 = min(box_a[2], box_b[2])
+    iy2 = min(box_a[3], box_b[3])
+    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+    if inter == 0:
+        return 0.0
+    area_a = (box_a[2] - box_a[0]) * (box_a[3] - box_a[1])
+    area_b = (box_b[2] - box_b[0]) * (box_b[3] - box_b[1])
+    return inter / (area_a + area_b - inter)
+
+
 def _run_detection(image: np.ndarray) -> tuple[np.ndarray, dict]:
     """
     Run detection on a numpy BGR image (OpenCV frame).
@@ -75,37 +94,47 @@ def _run_detection(image: np.ndarray) -> tuple[np.ndarray, dict]:
     _load_models()
     annotated = image.copy()
 
-    # ── 1. Surgical instruments ───────────────────────────────────────────────
-    surgical_count = 0
-    if _surgical_model is not None:
-        s_res    = _surgical_model.predict(source=image, conf=CONF_THRESHOLD,
-                                           save=False, verbose=False)
-        s_boxes  = s_res[0].boxes
-        surgical_count = len(s_boxes)
-        s_names  = _surgical_model.names
-
-        for box, cls_id, conf in zip(s_boxes.xyxy.cpu().numpy(),
-                                     s_boxes.cls.cpu().numpy(),
-                                     s_boxes.conf.cpu().numpy()):
-            x1, y1, x2, y2 = map(int, box)
-            _draw_box(annotated, x1, y1, x2, y2,
-                      f"{s_names[int(cls_id)]} {conf:.2f}", SURGICAL_COLOUR)
-
-    # ── 2. Cutlery ────────────────────────────────────────────────────────────
-    c_res   = _coco_model.predict(source=image, conf=CONF_THRESHOLD,
+    # ── 1. Cutlery (COCO) ─────────────────────────────────────────────────────
+    c_res   = _coco_model.predict(source=image, conf=COCO_CONF_THRESHOLD,
                                    save=False, verbose=False,
                                    classes=list(CUTLERY_CLASS_IDS.keys()))
-    c_boxes = c_res[0].boxes
+    c_boxes      = c_res[0].boxes
+    coco_xyxy    = c_boxes.xyxy.cpu().numpy()   # keep for IoU filtering
     cutlery_items = []
     cutlery_count = len(c_boxes)
 
-    for box, cls_id, conf in zip(c_boxes.xyxy.cpu().numpy(),
+    for box, cls_id, conf in zip(coco_xyxy,
                                   c_boxes.cls.cpu().numpy(),
                                   c_boxes.conf.cpu().numpy()):
         x1, y1, x2, y2 = map(int, box)
         name = CUTLERY_CLASS_IDS[int(cls_id)]
         cutlery_items.append(name)
         _draw_box(annotated, x1, y1, x2, y2, f"{name} {conf:.2f}", CUTLERY_COLOUR)
+
+    # ── 2. Surgical instruments (suppress boxes that overlap COCO hits) ────────
+    surgical_count = 0
+    if _surgical_model is not None:
+        s_res   = _surgical_model.predict(source=image, conf=SURGICAL_CONF_THRESHOLD,
+                                          save=False, verbose=False)
+        s_boxes = s_res[0].boxes
+        s_names = _surgical_model.names
+
+        for box, cls_id, conf in zip(s_boxes.xyxy.cpu().numpy(),
+                                     s_boxes.cls.cpu().numpy(),
+                                     s_boxes.conf.cpu().numpy()):
+            # Skip if this box significantly overlaps any COCO detection
+            # (the surgical model is mis-labelling a utensil as an instrument)
+            overlaps_cutlery = any(
+                _iou(box, coco_box) > CROSS_MODEL_IOU_THRESHOLD
+                for coco_box in coco_xyxy
+            )
+            if overlaps_cutlery:
+                continue
+
+            x1, y1, x2, y2 = map(int, box)
+            _draw_box(annotated, x1, y1, x2, y2,
+                      f"{s_names[int(cls_id)]} {conf:.2f}", SURGICAL_COLOUR)
+            surgical_count += 1
 
     # ── 3. Summary overlay ────────────────────────────────────────────────────
     total = surgical_count + cutlery_count
@@ -228,6 +257,13 @@ def _draw_box(image, x1, y1, x2, y2, label, colour):
 
 def _print_summary(results: dict):
     print("\n─── Summary ───────────────────────────────────────────────")
+    if results["cutlery_items"]:
+        from collections import Counter
+        for name, n in Counter(results["cutlery_items"]).items():
+            print(f"  {name:<20s}: {n}")
+    if results["surgical_count"]:
+        print(f"  Surgical instruments: {results['surgical_count']}")
+    print(f"  ─────────────────────────────")
     print(f"  Total Instruments : {results['total_count']}")
     print("───────────────────────────────────────────────────────────\n")
 
