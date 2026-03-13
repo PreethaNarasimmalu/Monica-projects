@@ -110,10 +110,8 @@ def _run_detection(image: np.ndarray) -> tuple[np.ndarray, dict]:
     # ── 3. Summary overlay ────────────────────────────────────────────────────
     total = surgical_count + cutlery_count
     cv2.putText(annotated,
-                f"Instruments: {surgical_count}  Cutlery: {cutlery_count}  Total: {total}",
+                f"Total objects detected: {total}",
                 (10, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2, cv2.LINE_AA)
-    cv2.putText(annotated, "Green = Surgical   Blue = Cutlery",
-                (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1, cv2.LINE_AA)
 
     return annotated, {
         "surgical_count": surgical_count,
@@ -230,11 +228,7 @@ def _draw_box(image, x1, y1, x2, y2, label, colour):
 
 def _print_summary(results: dict):
     print("\n─── Summary ───────────────────────────────────────────────")
-    print(f"  Surgical instruments : {results['surgical_count']}")
-    print(f"  Cutlery items        : {results['cutlery_count']}")
-    if results['cutlery_items']:
-        print(f"    → {', '.join(results['cutlery_items'])}")
-    print(f"  TOTAL                : {results['total_count']}")
+    print(f"  Total objects detected: {results['total_count']}")
     print("───────────────────────────────────────────────────────────\n")
 
 
@@ -258,6 +252,5 @@ if __name__ == "__main__":
 
     if args.image:
         results = demo_detect_image(args.image, show=not args.no_display)
-        print(f"Total objects counted: {results['total_count']}")
     else:
         demo_detect_camera(camera_index=args.camera)
