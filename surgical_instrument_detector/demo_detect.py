@@ -110,7 +110,7 @@ def _run_detection(image: np.ndarray) -> tuple[np.ndarray, dict]:
     # ── 3. Summary overlay ────────────────────────────────────────────────────
     total = surgical_count + cutlery_count
     cv2.putText(annotated,
-                f"Total objects detected: {total}",
+                f"Total Instruments : {total}",
                 (10, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2, cv2.LINE_AA)
 
     return annotated, {
@@ -228,7 +228,7 @@ def _draw_box(image, x1, y1, x2, y2, label, colour):
 
 def _print_summary(results: dict):
     print("\n─── Summary ───────────────────────────────────────────────")
-    print(f"  Total objects detected: {results['total_count']}")
+    print(f"  Total Instruments : {results['total_count']}")
     print("───────────────────────────────────────────────────────────\n")
 
 
