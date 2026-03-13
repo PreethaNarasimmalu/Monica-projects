@@ -36,6 +36,11 @@ def download_dataset():
     print("Surgical Instrument Dataset Downloader")
     print("=" * 60)
 
+    # Remove any existing dataset directory so the SDK performs a fresh download
+    # (an existing data.yaml placeholder would otherwise trick the SDK into skipping)
+    if os.path.exists(OUTPUT_DIR):
+        print(f"Removing existing dataset directory for fresh download: {OUTPUT_DIR}")
+        shutil.rmtree(OUTPUT_DIR)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     # Authenticate with Roboflow
