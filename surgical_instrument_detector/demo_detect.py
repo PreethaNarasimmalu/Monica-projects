@@ -19,6 +19,8 @@ Usage:
 
 import argparse
 import os
+import platform
+import subprocess
 import cv2
 import numpy as np
 from ultralytics import YOLO
@@ -133,16 +135,13 @@ def demo_detect_image(image_path: str, show: bool = True) -> dict:
 
     _print_summary(results)
 
-    if show:
-        cv2.imshow("Demo Detection — Instruments & Cutlery", annotated)
-        print("Press any key in the image window to close...")
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-
     base, ext = os.path.splitext(image_path)
     output_path = f"{base}_demo{ext}"
     cv2.imwrite(output_path, annotated)
     print(f"Annotated image saved: {output_path}")
+
+    if show:
+        _open_image(output_path)
 
     return results
 
@@ -151,12 +150,12 @@ def demo_detect_image(image_path: str, show: bool = True) -> dict:
 
 def demo_detect_camera(camera_index: int = 0) -> None:
     """
-    Open a live camera feed.
+    Open a live camera feed (terminal-controlled, no GUI window required).
 
-    Controls
+    Controls  (type in this terminal, then press Enter)
     --------
-    SPACE  – capture current frame and run detection
-    Q      – quit
+    Enter  – capture current frame and run detection
+    q      – quit
     """
     _load_models()
 
@@ -166,48 +165,60 @@ def demo_detect_camera(camera_index: int = 0) -> None:
         return
 
     print(f"\nCamera {camera_index} opened.")
-    print("  SPACE  →  capture frame & run detection")
-    print("  Q      →  quit\n")
+    print("  Press Enter       →  capture frame & run detection")
+    print("  Type q + Enter    →  quit\n")
 
     capture_num = 0
 
     while True:
-        ret, frame = cap.read()
+        try:
+            user_input = input("Ready — press Enter to capture (or type q to quit): ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\nQuitting.")
+            break
+
+        if user_input == "q":
+            print("Quitting camera mode.")
+            break
+
+        # Flush camera buffer — read a few frames to get the freshest image
+        for _ in range(5):
+            cap.grab()
+        ret, frame = cap.retrieve()
+
         if not ret:
             print("[ERROR] Failed to read from camera.")
             break
 
-        # Show live preview with a hint overlay
-        preview = frame.copy()
-        cv2.putText(preview, "SPACE = detect   Q = quit",
-                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2, cv2.LINE_AA)
-        cv2.imshow("Demo — Live Camera", preview)
+        capture_num += 1
+        print(f"\n[Capture {capture_num}] Running detection...")
+        annotated, results = _run_detection(frame)
+        _print_summary(results)
 
-        key = cv2.waitKey(1) & 0xFF
-
-        if key == ord('q'):
-            print("Quitting camera mode.")
-            break
-
-        elif key == ord(' '):
-            print(f"\n[Capture {capture_num + 1}] Running detection...")
-            annotated, results = _run_detection(frame)
-            _print_summary(results)
-
-            # Save captured result
-            capture_num += 1
-            output_path = f"demo_capture_{capture_num:03d}.jpg"
-            cv2.imwrite(output_path, annotated)
-            print(f"Saved: {output_path}")
-
-            # Show result in a separate window until next keypress
-            cv2.imshow(f"Detection Result #{capture_num}", annotated)
+        output_path = os.path.abspath(f"demo_capture_{capture_num:03d}.jpg")
+        cv2.imwrite(output_path, annotated)
+        print(f"Saved: {output_path}")
+        _open_image(output_path)
 
     cap.release()
-    cv2.destroyAllWindows()
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def _open_image(path: str):
+    """Open an image file with the OS default viewer."""
+    try:
+        if platform.system() == "Windows":
+            os.startfile(path)
+        elif platform.system() == "Darwin":
+            subprocess.run(["open", path], check=False)
+        else:
+            subprocess.run(["xdg-open", path], check=False)
+        print(f"Opened result in default image viewer.")
+    except Exception as e:
+        print(f"[INFO] Could not open viewer automatically: {e}")
+        print(f"       Open manually: {path}")
+
 
 def _draw_box(image, x1, y1, x2, y2, label, colour):
     cv2.rectangle(image, (x1, y1), (x2, y2), colour, 2)
