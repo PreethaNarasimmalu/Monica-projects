@@ -162,7 +162,12 @@ def find_roboflow_dir():
 
 
 def fix_data_yaml():
-    """Rewrite data.yaml so all image paths are absolute."""
+    """Rewrite data.yaml so all image paths are absolute.
+
+    Roboflow zips use ../train/images paths (relative to a subdirectory),
+    but when the zip extracts flat into dataset/ those paths resolve incorrectly.
+    We verify each resolved path exists and fall back to the known split directory.
+    """
     roboflow_dir = find_roboflow_dir()
     if not roboflow_dir:
         print("  WARNING: Could not find data.yaml to fix paths.")
@@ -172,14 +177,27 @@ def fix_data_yaml():
     with open(yaml_path, "r") as f:
         cfg = yaml.safe_load(f)
 
+    split_map = {"train": "train", "val": "valid", "test": "test"}
     changed = False
     for key in ("train", "val", "test"):
-        if key not in cfg:
+        if key not in cfg or not cfg[key]:
             continue
         raw = cfg[key]
-        if raw and not os.path.isabs(raw):
-            abs_path = os.path.normpath(os.path.join(roboflow_dir, raw))
-            cfg[key] = abs_path
+
+        # Resolve to absolute
+        if os.path.isabs(raw):
+            candidate = raw
+        else:
+            candidate = os.path.normpath(os.path.join(roboflow_dir, raw))
+
+        # If that path doesn't exist, use the actual split directory we know about
+        if not os.path.isdir(candidate):
+            fallback = find_split_dir(split_map[key])
+            if fallback:
+                candidate = fallback
+
+        if candidate != raw:
+            cfg[key] = candidate
             changed = True
 
     if changed:

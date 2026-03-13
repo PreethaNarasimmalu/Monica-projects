@@ -47,23 +47,37 @@ def find_data_yaml():
 
 
 def ensure_absolute_paths(yaml_path):
-    """Rewrite any relative image paths in data.yaml to absolute paths.
+    """Rewrite any image paths in data.yaml to correct absolute paths.
 
-    Roboflow sometimes writes relative paths that only work from inside
-    the subdirectory. This ensures YOLO can find images from any CWD.
+    Roboflow zips use ../train/images paths (relative to a subdirectory).
+    When the zip extracts flat into dataset/ those resolve incorrectly.
+    We verify each path exists and fall back to OUTPUT_DIR/{split}/images.
     """
     yaml_dir = os.path.dirname(os.path.abspath(yaml_path))
     with open(yaml_path, "r") as f:
         cfg = yaml.safe_load(f)
 
+    split_map = {"train": "train", "val": "valid", "test": "test"}
     changed = False
     for key in ("train", "val", "test"):
-        if key not in cfg:
+        if key not in cfg or not cfg[key]:
             continue
         raw = cfg[key]
-        if raw and not os.path.isabs(raw):
-            abs_path = os.path.normpath(os.path.join(yaml_dir, raw))
-            cfg[key] = abs_path
+
+        # Resolve to absolute
+        if os.path.isabs(raw):
+            candidate = raw
+        else:
+            candidate = os.path.normpath(os.path.join(yaml_dir, raw))
+
+        # If that path doesn't exist, fall back to OUTPUT_DIR/{split}/images
+        if not os.path.isdir(candidate):
+            fallback = os.path.join(OUTPUT_DIR, split_map[key], "images")
+            if os.path.isdir(fallback):
+                candidate = fallback
+
+        if candidate != raw:
+            cfg[key] = candidate
             changed = True
 
     if changed:
